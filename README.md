@@ -1,21 +1,15 @@
 # GitHub Activity Leaderboard
 
-A production‑ready **Next.js 14** app that builds a leaderboard from GitHub org activity (PRs opened/merged, issues, reviews), caches results in **Upstash Redis**, and serves a beautiful UI with optional client auto‑refresh.
+## 🏁 Overview
 
-> Use this README to evaluate and run the project locally, compare repos. Everything you need—env vars, setup steps, testing tricks—is below.
+This project powers the **CircuitVerse Leaderboard**, which ranks contributors based on GitHub activity — such as opened PRs, merged PRs, issues created, and code reviews.
+ the leaderboard uses **Upstash Redis** as a global caching database, allowing it to:
 
----
+- Load instantly (<1 second)
+- Refresh automatically in the background
+- Display old data while fetching new updates
+- Never exceed database storage limits
 
-## ✨ Features
-- **Server‑first** data fetching with an **API route** that aggregates GitHub activity
-- **Fast caching strategy**: *fresh* window + *serve‑stale* with background rebuilds
-- **Upstash Redis** integration (automatic if env vars present; in‑memory fallback locally)
-- **Configurable periods**: `week`, `month`, `year`
-- **Debug endpoints** to verify health, timestamps, and force rebuilds
-- **Optional client auto‑refresh** (polls status and refreshes UI when cache updates)
-- **Zero vendor lock‑in** for storage: works without Redis in local dev
-
----
 
 ## 🧱 Tech Stack
 - **Next.js 14+ / React 18** (App Router, RSC)
@@ -62,6 +56,130 @@ lib/
 - If expired (older than stale window), the API builds **before** responding.
 
 **Testing override (optional):** You can temporarily set `week` to 1‑minute TTL / 5‑minute stale for quick iteration. See *Testing Tips* below.
+
+---
+## ⚙️ Architecture Flow
+
+### 🧠 System Overview
+
+```text
++----------------+
+|  User visits   |
+|  /leaderboard  |
++--------+-------+
+         |
+         v
++-----------------------------+
+| Check Redis (Upstash) cache |
++-----------------------------+
+         |
+   +-----+----------------------+
+   |                            |
+   | Cache exists               | Cache empty or expired
+   v                            v
+Serve old data instantly     Fetch new data from GitHub
+(show old leaderboard)       Build leaderboard (PRs, Issues, Reviews)
+   |                            |
+   | Background job refreshes   |
+   | and updates Redis cache    |
+   +------------+---------------+
+                |
+                v
+       User sees updated data next load
+```
+
+---
+
+## 🕒 Refresh Timing (Smart Caching)
+
+| Period | Fresh Window (TTL) | Serve-Stale Window (STALE_TTL) | Description |
+|--------|--------------------|-------------------------------|-------------|
+| Week   | 1 hour             | 24 hours                      | Refreshes hourly |
+| Month  | 6 hours            | 24 hours                      | Refreshes every 6 hours |
+| Year   | 12 hours           | 24 hours                      | Refreshes twice per day |
+
+**Behavior Summary:**
+- If cache is fresh → serve it instantly  
+- If stale (but <24h old) → serve old data **and** start background refresh  
+- If expired (>24h) → rebuild completely from GitHub  
+
+---
+
+## 📊 Data Flow
+
+```text
+GitHub API  --->  Leaderboard Builder  --->  Redis (Upstash)
+                     |                            |
+                     |                            |
+                     |                            v
+                     |                    Cached Data (JSON)
+                     v
+             Next.js API Route (/api/leaderboard)
+                     |
+                     v
+               Frontend (page.tsx)
+                     |
+                     v
+        Displays data instantly + shows:
+        “Last updated: 12 Dec 2025, 06:42 PM IST”
+        “Refreshing in background...”
+```
+
+---
+
+## 💾 Redis Cache Structure
+
+Each leaderboard period (`week`, `month`, `year`) is stored as one small Redis key:
+
+```json
+{
+  "at": 1765577536254,
+  "data": [
+    {
+      "username": "naman79820",
+      "name": "Naman Chhabra",
+      "total_points": 49,
+      "breakdown": {
+        "PR opened": { "count": 13, "points": 26 },
+        "PR merged": { "count": 3, "points": 15 },
+        "Issue opened": { "count": 7, "points": 7 }
+      }
+    }
+  ]
+}
+```
+
+- Redis only stores **3 keys total** → `lb:week`, `lb:month`, `lb:year`
+- Each key auto-refreshes and overwrites itself  
+- Optionally, Redis can auto-delete keys using:
+  ```ts
+  await redis.set(key, { at: nowAt, data: entries }, { ex: STALE_TTL });
+  ```
+
+---
+
+## 💬 Why Not JSON File Storage?
+
+| Problem | Explanation |
+|----------|--------------|
+| ❌ **Not shared globally** | Local files exist only on one server. On Vercel, multiple serverless instances can’t share them. |
+| ❌ **No concurrency safety** | If multiple API calls write at the same time, JSON gets corrupted. |
+| ❌ **Read-only in production** | Vercel’s file system is read-only, so JSON can’t be updated. |
+| ❌ **No automatic cleanup** | JSON keeps growing; no TTL or expiry. |
+| ❌ **Slow and fragile** | File I/O is slower than in-memory databases like Redis. |
+
+---
+
+## ✅ Why Redis (Upstash) is the Best Choice
+
+| Advantage | Description |
+|------------|--------------|
+| ⚡ **Fast** | Reads and writes happen in milliseconds. |
+| 🌍 **Global** | Shared cache across all regions and users. |
+| 🔁 **Auto-refresh** | Data updates silently in the background. |
+| 🧹 **Self-cleaning** | Old data is overwritten, not accumulated. |
+| 🔐 **Safe** | Atomic writes, no corruption. |
+| 💸 **Free tier** | 10K requests/day is more than enough. |
 
 ---
 
@@ -197,43 +315,6 @@ Each entry card shows rank, avatar/name, total points, and a per‑activity brea
 
 ---
 
-## 🔄 Optional: Client Auto‑Refresh
-If you want the page to update as soon as the server cache refreshes, enable the client poller:
-
-1. Keep `AutoRefresh.tsx` (client) that polls `/api/leaderboard/[period]?head=1` every ~20s.
-2. In `[period]/page.tsx` (server), conditionally render the wrapper only when `cache === "stale"`:
-
-```tsx
-{/* Auto-refresh (only while stale) */}
-{cache === "stale" && (
-  <AutoRefresh period={valid} initialUpdatedAt={updatedAt} intervalMs={20000} />
-)}
-```
-
-This keeps idle pages quiet while still providing fresh data during stale windows.
-
----
-
-## 🧪 Testing Tips
-- **Short TTL for `week`**: Temporarily set inside API route:
-  ```ts
-  if (period === "week") {
-    effectiveTTL = 60;      // 1 minute fresh
-    effectiveStale = 300;   // 5 minutes serve-stale
-  }
-  ```
-- **Force rebuild**: `/api/leaderboard/week?force=1&debug=1`
-- **Check timestamps**: `/api/leaderboard/week?head=1`
-- **Generate activity quickly**: use `?org=YourOrg&sinceHours=1` and make a tiny PR/issue/review
-- **Widen scan bounds** (more activity):
-  ```ts
-  const MAX_SEARCH_PAGES = 3; // was 2
-  const REPOS_CAP = 10;       // was 5
-  ```
-
-> Note: Larger bounds burn more GitHub API quota. Keep small for demos.
-
----
 
 ## 🧩 Implementation Details
 - **Pagination**: Uses GitHub `Link` headers to follow pages up to small caps
