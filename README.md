@@ -247,31 +247,6 @@ This keeps idle pages quiet while still providing fresh data during stale window
 
 ---
 
-## 📦 Deployment (Vercel)
-1. **Import repo** into Vercel
-2. Set **Environment Variables** (see `.env.local` above)
-3. Ensure **Node.js 18+** runtime
-4. Recommended: `export const runtime = "nodejs";` in the API route for Windows stability
-5. Deploy
-
-**CI/Previews**: The API uses cache keys per period, so preview deploys can safely reuse the same Upstash instance. For isolation, prefix keys with env name.
-
----
-
-## 🩺 Troubleshooting
-- **Build error: `ssr: false` not allowed in Server Components**
-  - Wrap your dynamic client import in a `"use client"` component (see `AutoRefreshWrapper.tsx`).
-- **No new data appears**
-  - Check `head=1` for `updatedAt` changes
-  - Use `force=1` to rebuild
-  - Ensure your token has enough scope and API quotas are available (`probe=1`)
-  - Increase `MAX_SEARCH_PAGES` / `REPOS_CAP` during tests
-- **429 / rate limits**
-  - Reduce polling; narrow `sinceHours`; run in off‑peak; increase token trust level
-- **Redis not set**
-  - App falls back to in‑memory cache for local dev; add Upstash for persistence and cross‑instance cache
-
----
 
 ## 🤝 Contributing
 1. Fork the repo
@@ -281,16 +256,4 @@ This keeps idle pages quiet while still providing fresh data during stale window
 
 Please keep changes small and add context in PR description. For questions, open a Discussion.
 
----
-
-## 📜 License
-MIT © Contributors
-
----
-
-## 👥 Maintainers / Contacts
-- Primary: _Your Name_ (@your‑handle)
-- Co‑maintainer: _Teammate Name_ (@their‑handle)
-
-> If this repo is selected by vote, we’ll maintain a stable main branch, document releases, and respond to issues within 48h.
 
