@@ -2,7 +2,7 @@
 
 A production‑ready **Next.js 14** app that builds a leaderboard from GitHub org activity (PRs opened/merged, issues, reviews), caches results in **Upstash Redis**, and serves a beautiful UI with optional client auto‑refresh.
 
-> Use this README to evaluate and run the project locally, compare repos, and deploy. Everything you need—env vars, setup steps, testing tricks—is below.
+> Use this README to evaluate and run the project locally, compare repos. Everything you need—env vars, setup steps, testing tricks—is below.
 
 ---
 
